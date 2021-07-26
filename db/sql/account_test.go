@@ -46,7 +46,7 @@ func TestGetAccountByID(t *testing.T) {
 }
 
 func TestGetListAccounts(t *testing.T) {
-	n := 5
+	n := 10
 	accounts := make([]Account, n)
 	for i := 0; i < n; i++ {
 		accounts[i] = createRandomAccount(t)
