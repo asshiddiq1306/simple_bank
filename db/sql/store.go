@@ -6,19 +6,24 @@ import (
 	"fmt"
 )
 
-type Store struct {
+type Store interface {
+	Querier
+	TransferTx(ctx context.Context, arg TransferTxArg) (TransferTxResult, error)
+}
+
+type SQLStore struct {
 	*Query
 	db *sql.DB
 }
 
-func NewStore(db *sql.DB) *Store {
-	return &Store{
+func NewStore(db *sql.DB) Store {
+	return &SQLStore{
 		db:    db,
 		Query: NewQuery(db),
 	}
 }
 
-func (store *Store) execTx(ctx context.Context, fn func(query *Query) error) error {
+func (store *SQLStore) execTx(ctx context.Context, fn func(query *Query) error) error {
 	tx, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -27,16 +32,17 @@ func (store *Store) execTx(ctx context.Context, fn func(query *Query) error) err
 	q := NewQuery(tx)
 	err = fn(q)
 	if err != nil {
-		if rbErr := tx.Rollback(); err != nil {
-			return fmt.Errorf("rb error: %s, tx error: %s", rbErr, err)
+		if rbErr := tx.Rollback(); rbErr != nil {
+			return fmt.Errorf("rb error: %s, tx error : %s", rbErr, err)
 		}
+
 		return err
 	}
 
 	return tx.Commit()
 }
 
-type TransferTxArgs struct {
+type TransferTxArg struct {
 	FromAccountID int64 `json:"from_account_id"`
 	ToAccountID   int64 `json:"to_account_id"`
 	Amount        int64 `json:"amount"`
@@ -50,11 +56,12 @@ type TransferTxResult struct {
 	ToAccount   Account  `json:"to_account"`
 }
 
-func (store *Store) TransferTx(ctx context.Context, arg TransferTxArgs) (TransferTxResult, error) {
+func (store *SQLStore) TransferTx(ctx context.Context, arg TransferTxArg) (TransferTxResult, error) {
 	var result TransferTxResult
 
 	err := store.execTx(ctx, func(query *Query) error {
 		var err error
+
 		result.Transfer, err = query.CreateNewTransfer(ctx, CreateNewTransferArgs{
 			FromAccountID: arg.FromAccountID,
 			ToAccountID:   arg.ToAccountID,
@@ -88,7 +95,6 @@ func (store *Store) TransferTx(ctx context.Context, arg TransferTxArgs) (Transfe
 		} else {
 			result.ToAccount, result.FromAccount, err = addMoney(ctx, query, arg.ToAccountID, arg.Amount, arg.FromAccountID, -arg.Amount)
 		}
-
 		return nil
 	})
 
@@ -118,4 +124,5 @@ func addMoney(
 	})
 
 	return
+
 }
